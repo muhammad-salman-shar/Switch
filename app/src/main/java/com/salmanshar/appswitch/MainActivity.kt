@@ -32,7 +32,6 @@ class MainActivity : AppCompatActivity() {
             checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
             requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 1)
         }
-
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(48, 96, 48, 48)
@@ -95,7 +94,8 @@ class MainActivity : AppCompatActivity() {
             row.addView(Button(this).apply {
                 text = "Edit"
                 setOnClickListener {
-                    val it2 = Intent(this@MainActivity, EditButtonActivity::class.java)
+                    val target = if (cfg.type == 0) EditTimerActivity::class.java else EditButtonActivity::class.java
+                    val it2 = Intent(this@MainActivity, target)
                     it2.putExtra("id", cfg.id)
                     startActivity(it2)
                 }
@@ -116,6 +116,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun typeName(t: Int): String = when (t) {
+        0 -> "Timer"
         1 -> "Single app"
         2 -> "2-app toggle"
         3 -> "3-app cycle"
@@ -125,14 +126,16 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun showAddDialog() {
-        val options = arrayOf("1 Button", "2 Buttons", "3 Buttons", "4 Buttons (expander)", "5 Buttons")
+        val options = arrayOf("1 Button", "2 Buttons", "3 Buttons", "4 Buttons (expander)", "5 Buttons", "Timer Button")
         AlertDialog.Builder(this)
             .setTitle("Add button")
             .setItems(options) { _, which ->
-                val cfg: ButtonConfig = ButtonConfig.new(which + 1)
+                val type = if (which == 5) 0 else which + 1
+                val cfg: ButtonConfig = ButtonConfig.new(type)
                 repo.updateButton(cfg)
                 sendReload(); refresh()
-                val i = Intent(this, EditButtonActivity::class.java)
+                val target = if (type == 0) EditTimerActivity::class.java else EditButtonActivity::class.java
+                val i = Intent(this, target)
                 i.putExtra("id", cfg.id)
                 startActivity(i)
             }.show()

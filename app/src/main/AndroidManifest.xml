@@ -15,6 +15,7 @@
             </intent-filter>
         </activity>
         <activity android:name=".EditButtonActivity" android:exported="false"/>
+        <activity android:name=".EditTimerActivity" android:exported="false"/>
         <service android:name=".FloatingService" android:exported="false" android:foregroundServiceType="specialUse">
             <property android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE" android:value="floating_toggle"/>
         </service>
