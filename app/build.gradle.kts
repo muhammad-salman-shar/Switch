@@ -3,10 +3,10 @@ plugins {
     id("org.jetbrains.kotlin.android")
 }
 android {
-    namespace = "com.salmanshar.switch"
+    namespace = "com.salmanshar.appswitch"
     compileSdk = 34
     defaultConfig {
-        applicationId = "com.salmanshar.switch"
+        applicationId = "com.salmanshar.appswitch"
         minSdk = 26
         targetSdk = 34
         versionCode = 1

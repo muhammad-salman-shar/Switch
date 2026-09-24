@@ -1,4 +1,4 @@
-package com.salmanshar.switch
+package com.salmanshar.appswitch
 
 import android.app.Notification
 import android.app.NotificationChannel
@@ -23,11 +23,10 @@ import androidx.core.app.NotificationCompat
 class FloatingService : Service() {
     private lateinit var wm: WindowManager
     private lateinit var view: TextView
-    private lateinit var params: WindowManager.LayoutParams
     private val handler = Handler(Looper.getMainLooper())
+    private var pkgA = ""
+    private var pkgB = ""
     private var targetPkg = ""
-    private var dsPkg = "com.deepseek.chat"
-    private var txPkg = "com.termux"
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -35,9 +34,9 @@ class FloatingService : Service() {
         super.onCreate()
         startForeground(1, buildNotification())
         val prefs = getSharedPreferences("switch", MODE_PRIVATE)
-        dsPkg = prefs.getString("ds", "com.deepseek.chat")!!
-        txPkg = prefs.getString("tx", "com.termux")!!
-        targetPkg = txPkg
+        pkgA = prefs.getString("pkgA", "") ?: ""
+        pkgB = prefs.getString("pkgB", "") ?: ""
+        targetPkg = pkgB
         wm = getSystemService(Context.WINDOW_SERVICE) as WindowManager
         view = TextView(this).apply {
             textSize = 22f
@@ -48,7 +47,7 @@ class FloatingService : Service() {
             width = p; height = p
             setOnClickListener { doSwitch() }
         }
-        params = WindowManager.LayoutParams(
+        val params = WindowManager.LayoutParams(
             WindowManager.LayoutParams.WRAP_CONTENT,
             WindowManager.LayoutParams.WRAP_CONTENT,
             if (Build.VERSION.SDK_INT >= 26) WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
@@ -67,22 +66,22 @@ class FloatingService : Service() {
     private val poll = object : Runnable {
         override fun run() {
             val fg = foreground()
-            if (fg == dsPkg) targetPkg = txPkg
-            else if (fg == txPkg) targetPkg = dsPkg
+            if (fg == pkgA) targetPkg = pkgB
+            else if (fg == pkgB) targetPkg = pkgA
             updateIcon()
             handler.postDelayed(this, 600)
         }
     }
 
     private fun updateIcon() {
-        if (targetPkg == txPkg) {
-            view.text = "T"
-            view.setBackgroundColor(0xFF00C853.toInt())
-        } else {
-            view.text = "D"
-            view.setBackgroundColor(0xFF2962FF.toInt())
-        }
+        view.text = label(targetPkg).take(1).uppercase().ifEmpty { "?" }
+        view.setBackgroundColor(if (targetPkg == pkgB) 0xFF2962FF.toInt() else 0xFF00C853.toInt())
     }
+
+    private fun label(pkg: String): String = try {
+        val ai = packageManager.getApplicationInfo(pkg, 0)
+        packageManager.getApplicationLabel(ai).toString()
+    } catch (_: Exception) { pkg }
 
     private fun foreground(): String? {
         val usm = getSystemService(Context.USAGE_STATS_SERVICE) as UsageStatsManager
@@ -101,6 +100,7 @@ class FloatingService : Service() {
     }
 
     private fun doSwitch() {
+        if (targetPkg.isEmpty()) return
         val i = packageManager.getLaunchIntentForPackage(targetPkg) ?: return
         i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         startActivity(i)
