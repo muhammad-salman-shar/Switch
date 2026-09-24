@@ -1,5 +1,6 @@
 package com.salmanshar.appswitch
 
+import android.annotation.SuppressLint
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -11,25 +12,36 @@ import android.content.Intent
 import android.graphics.Color
 import android.graphics.PixelFormat
 import android.graphics.Typeface
+import android.graphics.drawable.GradientDrawable
 import android.os.Build
 import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
 import android.view.Gravity
+import android.view.MotionEvent
 import android.view.WindowManager
 import android.widget.TextView
 import androidx.core.app.NotificationCompat
+import kotlin.math.abs
 
 class FloatingService : Service() {
     private lateinit var wm: WindowManager
     private lateinit var view: TextView
+    private lateinit var params: WindowManager.LayoutParams
     private val handler = Handler(Looper.getMainLooper())
     private var pkgA = ""
     private var pkgB = ""
     private var targetPkg = ""
+    private var lastSizeDp = -1
+    private var downX = 0f
+    private var downY = 0f
+    private var startX = 0
+    private var startY = 0
+    private var dragged = false
 
     override fun onBind(intent: Intent?): IBinder? = null
 
+    @SuppressLint("ClickableViewAccessibility")
     override fun onCreate() {
         super.onCreate()
         startForeground(1, buildNotification())
@@ -43,11 +55,44 @@ class FloatingService : Service() {
             setTextColor(Color.WHITE)
             typeface = Typeface.DEFAULT_BOLD
             gravity = Gravity.CENTER
-            val p = (56 * resources.displayMetrics.density).toInt()
-            width = p; height = p
-            setOnClickListener { doSwitch() }
+            setOnTouchListener { _, event ->
+                when (event.action) {
+                    MotionEvent.ACTION_DOWN -> {
+                        downX = event.rawX
+                        downY = event.rawY
+                        startX = params.x
+                        startY = params.y
+                        dragged = false
+                        true
+                    }
+                    MotionEvent.ACTION_MOVE -> {
+                        val dx = event.rawX - downX
+                        val dy = event.rawY - downY
+                        if (abs(dx) > 15f || abs(dy) > 15f) dragged = true
+                        if (dragged) {
+                            // END gravity: x offset from right edge
+                            params.x = startX - dx.toInt()
+                            params.y = startY + dy.toInt()
+                            wm.updateViewLayout(view, params)
+                        }
+                        true
+                    }
+                    MotionEvent.ACTION_UP -> {
+                        if (!dragged) {
+                            doSwitch()
+                        } else {
+                            prefs.edit()
+                                .putInt("posX", params.x)
+                                .putInt("posY", params.y)
+                                .apply()
+                        }
+                        true
+                    }
+                    else -> false
+                }
+            }
         }
-        val params = WindowManager.LayoutParams(
+        params = WindowManager.LayoutParams(
             WindowManager.LayoutParams.WRAP_CONTENT,
             WindowManager.LayoutParams.WRAP_CONTENT,
             if (Build.VERSION.SDK_INT >= 26) WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
@@ -56,10 +101,11 @@ class FloatingService : Service() {
             PixelFormat.TRANSLUCENT
         ).apply {
             gravity = Gravity.TOP or Gravity.END
-            x = 20; y = 240
+            x = prefs.getInt("posX", 20)
+            y = prefs.getInt("posY", 240)
         }
         wm.addView(view, params)
-        updateIcon()
+        applySizeAndIcon()
         handler.post(poll)
     }
 
@@ -68,20 +114,27 @@ class FloatingService : Service() {
             val fg = foreground()
             if (fg == pkgA) targetPkg = pkgB
             else if (fg == pkgB) targetPkg = pkgA
-            updateIcon()
+            applySizeAndIcon()
             handler.postDelayed(this, 600)
         }
     }
 
-    private fun updateIcon() {
-        view.text = label(targetPkg).take(1).uppercase().ifEmpty { "?" }
-        view.setBackgroundColor(if (targetPkg == pkgB) 0xFF2962FF.toInt() else 0xFF00C853.toInt())
+    private fun applySizeAndIcon() {
+        val dp = getSharedPreferences("switch", MODE_PRIVATE).getInt("sizeDp", 45)
+        if (dp != lastSizeDp) {
+            val p = (dp * resources.displayMetrics.density).toInt()
+            view.width = p
+            view.height = p
+            view.requestLayout()
+            lastSizeDp = dp
+        }
+        val isA = targetPkg == pkgA
+        view.text = if (isA) "A" else "B"
+        view.background = GradientDrawable().apply {
+            shape = GradientDrawable.OVAL
+            setColor(if (isA) 0xFF00C853.toInt() else 0xFF2962FF.toInt())
+        }
     }
-
-    private fun label(pkg: String): String = try {
-        val ai = packageManager.getApplicationInfo(pkg, 0)
-        packageManager.getApplicationLabel(ai).toString()
-    } catch (_: Exception) { pkg }
 
     private fun foreground(): String? {
         val usm = getSystemService(Context.USAGE_STATS_SERVICE) as UsageStatsManager

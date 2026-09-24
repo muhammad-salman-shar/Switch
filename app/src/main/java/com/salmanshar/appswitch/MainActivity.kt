@@ -10,6 +10,7 @@ import android.os.Bundle
 import android.provider.Settings
 import android.widget.Button
 import android.widget.LinearLayout
+import android.widget.SeekBar
 import android.widget.TextView
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
@@ -18,6 +19,7 @@ import androidx.core.content.ContextCompat
 class MainActivity : AppCompatActivity() {
     private lateinit var prefs: SharedPreferences
     private lateinit var status: TextView
+    private lateinit var sizeLabel: TextView
     private lateinit var btnA: Button
     private lateinit var btnB: Button
 
@@ -39,6 +41,26 @@ class MainActivity : AppCompatActivity() {
             setOnClickListener { pickApp { pkg -> prefs.edit().putString("pkgB", pkg).apply(); refresh() } }
         }
         ll.addView(btnA); ll.addView(btnB)
+
+        sizeLabel = TextView(this).apply {
+            textSize = 14f
+            setPadding(0, 32, 0, 0)
+            text = "Button size: ${prefs.getInt("sizeDp", 45)}dp"
+        }
+        ll.addView(sizeLabel)
+        ll.addView(SeekBar(this).apply {
+            max = 80 - 24
+            progress = prefs.getInt("sizeDp", 45) - 24
+            setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+                override fun onProgressChanged(sb: SeekBar?, p: Int, fromUser: Boolean) {
+                    val dp = p + 24
+                    prefs.edit().putInt("sizeDp", dp).apply()
+                    sizeLabel.text = "Button size: ${dp}dp"
+                }
+                override fun onStartTrackingTouch(sb: SeekBar?) {}
+                override fun onStopTrackingTouch(sb: SeekBar?) {}
+            })
+        })
 
         ll.addView(Button(this).apply {
             text = "1. Grant Overlay"
@@ -72,8 +94,8 @@ class MainActivity : AppCompatActivity() {
     private fun refresh() {
         val a = prefs.getString("pkgA", "")
         val b = prefs.getString("pkgB", "")
-        btnA.text = "App A: " + (if (a.isNullOrEmpty()) "(tap to pick)" else label(a))
-        btnB.text = "App B: " + (if (b.isNullOrEmpty()) "(tap to pick)" else label(b))
+        btnA.text = "App A (Green): " + (if (a.isNullOrEmpty()) "(tap to pick)" else label(a))
+        btnB.text = "App B (Blue): " + (if (b.isNullOrEmpty()) "(tap to pick)" else label(b))
         val ov = Settings.canDrawOverlays(this)
         status.text = "Overlay: ${if (ov) "OK" else "MISSING"}   Usage access: ${if (hasUsageAccess()) "OK" else "MISSING"}"
     }
