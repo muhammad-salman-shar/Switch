@@ -15,6 +15,7 @@ import android.graphics.Color
 import android.graphics.PixelFormat
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
+import android.graphics.drawable.LayerDrawable
 import android.os.Build
 import android.os.Handler
 import android.os.IBinder
@@ -188,7 +189,8 @@ class FloatingService : Service() {
         val dens = resources.displayMetrics.density
         val itemH = (44 * dens).toInt()
         val menuW = (190 * dens).toInt()
-        items.forEachIndexed { i, (label, action) ->
+        val allItems = items + ("✕ Close" to { })
+        allItems.forEachIndexed { i, (label, action) ->
             val v = TextView(this).apply {
                 text = label
                 textSize = 15f
@@ -259,20 +261,30 @@ class FloatingService : Service() {
             }
             if (mini.name.isEmpty()) mini.name = "m${i + 1}"
             val sp = (mini.sizeDp * dens).toInt().coerceAtLeast((16 * dens).toInt())
-            val border = (sp * 0.08f).coerceAtLeast(2f).toInt()
+            val border = (sp * 0.12f).coerceAtLeast(3f).toInt()
             val v = TextView(this).apply {
                 text = mini.name
                 setTextColor(Color.WHITE)
                 typeface = Typeface.DEFAULT_BOLD
                 gravity = Gravity.CENTER
-                setTextSize(TypedValue.COMPLEX_UNIT_PX, (sp * 0.4f).coerceAtLeast(1f))
+                setTextSize(TypedValue.COMPLEX_UNIT_PX, (sp * 0.35f).coerceAtLeast(1f))
                 alpha = mini.alpha / 100f
                 isClickable = true
                 isFocusable = false
-                background = GradientDrawable().apply {
-                    shape = GradientDrawable.OVAL
-                    setColor(0x22000000)
-                    setStroke(border, mini.color)
+                background = LayerDrawable(arrayOf(
+                    GradientDrawable().apply {
+                        shape = GradientDrawable.OVAL
+                        setColor(Color.TRANSPARENT)
+                        setStroke(border, mini.color)
+                    },
+                    GradientDrawable().apply {
+                        shape = GradientDrawable.OVAL
+                        setColor(mini.color)
+                    },
+                )).apply {
+                    val dot = (sp * 0.45f).toInt().coerceAtLeast(2)
+                    val inset = ((sp - dot) / 2).coerceAtLeast(0)
+                    setLayerInset(1, inset, inset, inset, inset)
                 }
             }
             val pp = WindowManager.LayoutParams(
@@ -360,7 +372,8 @@ class FloatingService : Service() {
             },
         )
         clearMenu(h)
-        items.forEachIndexed { i, (label, action) ->
+        val allItems = items + ("✕ Close" to { })
+        allItems.forEachIndexed { i, (label, action) ->
             val v = TextView(this).apply {
                 text = label
                 textSize = 15f
@@ -400,12 +413,17 @@ class FloatingService : Service() {
 
     private fun manualFire(h: Holder, idx: Int) {
         val v = h.miniViews.getOrNull(idx) ?: return
-        val pp = h.miniParams.getOrNull(idx) ?: return
-        val cx = pp.x + v.width / 2f
-        val cy = pp.y + v.height / 2f
+        val mini = h.config.minis.getOrNull(idx) ?: return
+        val dens = resources.displayMetrics.density
+        val loc = IntArray(2)
+        v.getLocationOnScreen(loc)
+        val w = if (v.width > 0) v.width else (mini.sizeDp * dens).toInt()
+        val hh = if (v.height > 0) v.height else (mini.sizeDp * dens).toInt()
+        val cx = loc[0] + w / 2f + (mini.offsetX * dens)
+        val cy = loc[1] + hh / 2f + (mini.offsetY * dens)
         val svc = AutoTapService.instance
         if (svc == null) {
-            Toast.makeText(this, "Accessibility service off — tap skip", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, "Accessibility off — tap skip", Toast.LENGTH_SHORT).show()
         } else {
             svc.tap(cx, cy)
         }
