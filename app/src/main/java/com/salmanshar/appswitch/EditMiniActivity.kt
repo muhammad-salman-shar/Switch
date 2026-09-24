@@ -8,6 +8,7 @@ import android.text.InputFilter
 import android.text.InputType
 import android.util.TypedValue
 import android.view.Gravity
+import android.view.View
 import android.widget.Button
 import android.widget.EditText
 import android.widget.LinearLayout
@@ -23,6 +24,12 @@ class EditMiniActivity : AppCompatActivity() {
     private lateinit var config: ButtonConfig
     private var idx: Int = 0
     private lateinit var preview: TextView
+
+    private val swatches = intArrayOf(
+        0xFFFF6D00.toInt(), 0xFFFFFFFF.toInt(), 0xFF00C853.toInt(),
+        0xFF2962FF.toInt(), 0xFFD50000.toInt(), 0xFFAA00FF.toInt(),
+        0xFF00BCD4.toInt(), 0xFFFFD600.toInt(),
+    )
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -45,10 +52,6 @@ class EditMiniActivity : AppCompatActivity() {
 
         preview = TextView(this).apply {
             gravity = Gravity.CENTER; setTextColor(Color.WHITE)
-            background = GradientDrawable().apply {
-                shape = GradientDrawable.OVAL
-                setColor(mini.color)
-            }
         }
         root.addView(preview, LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.WRAP_CONTENT,
@@ -70,21 +73,49 @@ class EditMiniActivity : AppCompatActivity() {
             hint = "0"
             setText(mini.delayMs.toString())
             addTextChangedListener(simple { s ->
-                val v = s.toLongOrNull()?.coerceIn(0L, 5000L) ?: 0L
-                mini.delayMs = v
+                mini.delayMs = (s.toLongOrNull() ?: 0L).coerceIn(0L, 5000L)
             })
         })
 
-        root.addView(TextView(this).apply { text = "Size: ${mini.sizeDp}dp"; setPadding(0, 24, 0, 0) })
+        root.addView(TextView(this).apply { text = "Size: ${mini.sizeDp}dp (2-100)"; setPadding(0, 24, 0, 0) })
         root.addView(SeekBar(this).apply {
-            max = 60 - 12; progress = mini.sizeDp - 12
-            setOnSeekBarChangeListener(simpleSeek { p -> mini.sizeDp = p + 12; updatePreview() })
+            max = 100 - 2; progress = (mini.sizeDp - 2).coerceIn(0, 98)
+            setOnSeekBarChangeListener(simpleSeek { p -> mini.sizeDp = p + 2; updatePreview() })
         })
 
         root.addView(TextView(this).apply { text = "Transparency: ${mini.alpha}%"; setPadding(0, 24, 0, 0) })
         root.addView(SeekBar(this).apply {
             max = 100; progress = mini.alpha
             setOnSeekBarChangeListener(simpleSeek { p -> mini.alpha = p; updatePreview() })
+        })
+
+        root.addView(TextView(this).apply { text = "Ring color"; setPadding(0, 24, 0, 12) })
+        val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        swatches.forEach { c ->
+            row.addView(View(this).apply {
+                val sz = (30 * resources.displayMetrics.density).toInt()
+                layoutParams = LinearLayout.LayoutParams(sz, sz).apply { rightMargin = 8 }
+                background = GradientDrawable().apply {
+                    shape = GradientDrawable.OVAL
+                    setColor(c)
+                    setStroke(if (c == mini.color) 4 else 1, if (c == mini.color) Color.WHITE else Color.GRAY)
+                }
+                setOnClickListener { mini.color = c; render() }
+            })
+        }
+        root.addView(row)
+
+        root.addView(TextView(this).apply {
+            text = "Position: (${mini.posX}, ${mini.posY})   Locked: ${mini.locked}"
+            setPadding(0, 24, 0, 0)
+        })
+        root.addView(Button(this).apply {
+            text = if (mini.locked) "Unlock position" else "Lock position"
+            setOnClickListener { mini.locked = !mini.locked; render() }
+        })
+        root.addView(Button(this).apply {
+            text = "Reset position to main + offset"
+            setOnClickListener { mini.posX = -1; mini.posY = -1; render() }
         })
 
         root.addView(Button(this).apply {
@@ -104,9 +135,14 @@ class EditMiniActivity : AppCompatActivity() {
         val dp = mini.sizeDp * resources.displayMetrics.density
         preview.layoutParams = preview.layoutParams.apply { width = dp.toInt(); height = dp.toInt() }
         preview.text = mini.name
-        preview.setTextSize(TypedValue.COMPLEX_UNIT_PX, dp * 0.45f)
+        preview.setTextSize(TypedValue.COMPLEX_UNIT_PX, (dp * 0.4f).coerceAtLeast(1f))
         preview.alpha = mini.alpha / 100f
-        (preview.background as? GradientDrawable)?.setColor(mini.color)
+        val border = (dp * 0.08f).coerceAtLeast(2f)
+        preview.background = GradientDrawable().apply {
+            shape = GradientDrawable.OVAL
+            setColor(Color.TRANSPARENT)
+            setStroke(border.toInt(), mini.color)
+        }
         preview.requestLayout()
     }
 
