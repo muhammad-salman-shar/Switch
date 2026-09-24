@@ -59,10 +59,10 @@ class EditTimerActivity : AppCompatActivity() {
             addTextChangedListener(simple { s -> config.name = s.take(2); updatePreview() })
         })
 
-        root.addView(TextView(this).apply { text = "Size: ${config.sizeDp}dp"; setPadding(0, 24, 0, 0) })
+        root.addView(TextView(this).apply { text = "Size: ${config.sizeDp}dp (2-100)"; setPadding(0, 24, 0, 0) })
         root.addView(SeekBar(this).apply {
-            max = 200 - 40; progress = config.sizeDp - 40
-            setOnSeekBarChangeListener(simpleSeek { p -> config.sizeDp = p + 40; updatePreview() })
+            max = 100 - 2; progress = (config.sizeDp - 2).coerceIn(0, 98)
+            setOnSeekBarChangeListener(simpleSeek { p -> config.sizeDp = p + 2; updatePreview() })
         })
 
         root.addView(TextView(this).apply { text = "Transparency: ${config.alpha}%"; setPadding(0, 24, 0, 0) })
