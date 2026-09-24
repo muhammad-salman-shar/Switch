@@ -303,10 +303,8 @@ class FloatingService : Service() {
                 MotionEvent.ACTION_DOWN -> {
                     downX = e.rawX; downY = e.rawY; startX = pp.x; startY = pp.y
                     dragged = false; downTime = System.currentTimeMillis()
-                    if (!mini.locked) {
-                        lp = Runnable { if (!dragged) showMiniMenu(h, idx) }
-                            .also { handler.postDelayed(it, 600) }
-                    }
+                    lp = Runnable { if (!dragged) showMiniMenu(h, idx) }
+                        .also { handler.postDelayed(it, 600) }
                     true
                 }
                 MotionEvent.ACTION_MOVE -> {
