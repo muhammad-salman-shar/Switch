@@ -6,15 +6,18 @@ import java.util.UUID
 
 data class ButtonConfig(
     val id: String,
-    val type: Int, // 0 = timer, 1-5 = switch variants
+    val type: Int,
     val subButtons: MutableList<SubButton>,
     val minis: MutableList<MiniTimer>,
     var posX: Int,
     var posY: Int,
     var sizeDp: Int,
+    var name: String = "",
+    var alpha: Int = 100,
 ) {
     fun toJson(): JSONObject = JSONObject().apply {
-        put("id", id); put("type", type); put("posX", posX); put("posY", posY); put("sizeDp", sizeDp)
+        put("id", id); put("type", type); put("posX", posX); put("posY", posY)
+        put("sizeDp", sizeDp); put("name", name); put("alpha", alpha)
         put("subs", JSONArray().apply { subButtons.forEach { put(it.toJson()) } })
         put("minis", JSONArray().apply { minis.forEach { put(it.toJson()) } })
     }
@@ -34,17 +37,24 @@ data class ButtonConfig(
                 posX = o.optInt("posX", 20),
                 posY = o.optInt("posY", 240),
                 sizeDp = o.optInt("sizeDp", 45),
+                name = o.optString("name", ""),
+                alpha = o.optInt("alpha", 100),
             )
         }
         fun new(type: Int): ButtonConfig {
             val subs = mutableListOf<SubButton>()
             if (type != 0) repeat(type) { subs.add(SubButton("", defaultColor(it), 45)) }
+            val minis = mutableListOf<MiniTimer>()
+            if (type == 0) minis.add(MiniTimer(delayMs = 0L, name = "m1"))
             return ButtonConfig(
                 id = UUID.randomUUID().toString(),
                 type = type,
                 subButtons = subs,
-                minis = mutableListOf(),
-                posX = 20, posY = 240, sizeDp = if (type == 0) 90 else 45,
+                minis = minis,
+                posX = 20, posY = 240,
+                sizeDp = if (type == 0) 120 else 45,
+                name = "",
+                alpha = 100,
             )
         }
     }

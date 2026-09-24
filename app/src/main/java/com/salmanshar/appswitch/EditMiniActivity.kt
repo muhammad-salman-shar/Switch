@@ -18,32 +18,36 @@ import androidx.appcompat.app.AppCompatActivity
 import com.salmanshar.appswitch.model.ButtonConfig
 import com.salmanshar.appswitch.model.ConfigRepository
 
-class EditTimerActivity : AppCompatActivity() {
+class EditMiniActivity : AppCompatActivity() {
     private lateinit var repo: ConfigRepository
     private lateinit var config: ButtonConfig
+    private var idx: Int = 0
     private lateinit var preview: TextView
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         repo = ConfigRepository(this)
         val id = intent.getStringExtra("id") ?: run { finish(); return }
+        idx = intent.getIntExtra("miniIndex", 0)
         config = repo.loadButtons().firstOrNull { it.id == id } ?: run { finish(); return }
+        if (idx !in config.minis.indices) { finish(); return }
         render()
     }
+
+    private val mini get() = config.minis[idx]
 
     private fun render() {
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(48, 96, 48, 48)
         }
-        root.addView(TextView(this).apply { text = "Timer Button Settings"; textSize = 20f })
+        root.addView(TextView(this).apply { text = "Mini Timer #${idx + 1}"; textSize = 20f })
 
         preview = TextView(this).apply {
             gravity = Gravity.CENTER; setTextColor(Color.WHITE)
             background = GradientDrawable().apply {
                 shape = GradientDrawable.OVAL
-                setColor(Color.TRANSPARENT)
-                setStroke((2 * resources.displayMetrics.density).toInt(), 0xFF00E676.toInt())
+                setColor(mini.color)
             }
         }
         root.addView(preview, LinearLayout.LayoutParams(
@@ -54,62 +58,34 @@ class EditTimerActivity : AppCompatActivity() {
         root.addView(TextView(this).apply { text = "Name (max 2)"; setPadding(0, 24, 0, 0) })
         root.addView(EditText(this).apply {
             filters = arrayOf(InputFilter.LengthFilter(2))
-            hint = "MN"
-            setText(config.name)
-            addTextChangedListener(simple { s -> config.name = s.take(2); updatePreview() })
+            hint = "m1"
+            setText(mini.name)
+            addTextChangedListener(simple { s -> mini.name = s.take(2); updatePreview() })
         })
 
-        root.addView(TextView(this).apply { text = "Size: ${config.sizeDp}dp"; setPadding(0, 24, 0, 0) })
+        root.addView(TextView(this).apply { text = "Time after main tap (0-5000 ms)"; setPadding(0, 24, 0, 0) })
+        root.addView(EditText(this).apply {
+            inputType = InputType.TYPE_CLASS_NUMBER
+            filters = arrayOf(InputFilter.LengthFilter(4))
+            hint = "0"
+            setText(mini.delayMs.toString())
+            addTextChangedListener(simple { s ->
+                val v = s.toLongOrNull()?.coerceIn(0L, 5000L) ?: 0L
+                mini.delayMs = v
+            })
+        })
+
+        root.addView(TextView(this).apply { text = "Size: ${mini.sizeDp}dp"; setPadding(0, 24, 0, 0) })
         root.addView(SeekBar(this).apply {
-            max = 200 - 40; progress = config.sizeDp - 40
-            setOnSeekBarChangeListener(simpleSeek { p -> config.sizeDp = p + 40; updatePreview() })
+            max = 60 - 12; progress = mini.sizeDp - 12
+            setOnSeekBarChangeListener(simpleSeek { p -> mini.sizeDp = p + 12; updatePreview() })
         })
 
-        root.addView(TextView(this).apply { text = "Transparency: ${config.alpha}%"; setPadding(0, 24, 0, 0) })
+        root.addView(TextView(this).apply { text = "Transparency: ${mini.alpha}%"; setPadding(0, 24, 0, 0) })
         root.addView(SeekBar(this).apply {
-            max = 100; progress = config.alpha
-            setOnSeekBarChangeListener(simpleSeek { p -> config.alpha = p; updatePreview() })
+            max = 100; progress = mini.alpha
+            setOnSeekBarChangeListener(simpleSeek { p -> mini.alpha = p; updatePreview() })
         })
-
-        root.addView(TextView(this).apply {
-            text = "Mini timers: ${config.minis.size}/6"; textSize = 15f; setPadding(0, 32, 0, 8)
-        })
-        root.addView(Button(this).apply {
-            text = "+ Add mini timer"
-            isEnabled = config.minis.size < 6
-            setOnClickListener {
-                config.minis.add(com.salmanshar.appswitch.model.MiniTimer(
-                    delayMs = 0L, name = "m${config.minis.size + 1}"
-                ))
-                render()
-            }
-        })
-
-        config.minis.forEachIndexed { idx, mini ->
-            val row = LinearLayout(this).apply {
-                orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL
-                setPadding(0, 12, 0, 12)
-            }
-            row.addView(TextView(this).apply {
-                text = "#${idx + 1}  ${mini.name.ifEmpty { "?" }}   ${mini.delayMs}ms   ${mini.sizeDp}dp"
-                textSize = 13f; setTextColor(Color.WHITE)
-                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
-            })
-            row.addView(Button(this).apply {
-                text = "Edit"
-                setOnClickListener {
-                    val i = Intent(this@EditTimerActivity, EditMiniActivity::class.java)
-                    i.putExtra("id", config.id)
-                    i.putExtra("miniIndex", idx)
-                    startActivity(i)
-                }
-            })
-            row.addView(Button(this).apply {
-                text = "X"
-                setOnClickListener { config.minis.removeAt(idx); render() }
-            })
-            root.addView(row)
-        }
 
         root.addView(Button(this).apply {
             text = "Save"
@@ -123,19 +99,14 @@ class EditTimerActivity : AppCompatActivity() {
         updatePreview()
     }
 
-    override fun onResume() {
-        super.onResume()
-        val fresh = repo.loadButtons().firstOrNull { it.id == config.id }
-        if (fresh != null) { config = fresh; render() }
-    }
-
     private fun updatePreview() {
         if (!::preview.isInitialized) return
-        val dp = config.sizeDp * resources.displayMetrics.density
+        val dp = mini.sizeDp * resources.displayMetrics.density
         preview.layoutParams = preview.layoutParams.apply { width = dp.toInt(); height = dp.toInt() }
-        preview.text = config.name
-        preview.setTextSize(TypedValue.COMPLEX_UNIT_PX, dp * 0.35f)
-        preview.alpha = config.alpha / 100f
+        preview.text = mini.name
+        preview.setTextSize(TypedValue.COMPLEX_UNIT_PX, dp * 0.45f)
+        preview.alpha = mini.alpha / 100f
+        (preview.background as? GradientDrawable)?.setColor(mini.color)
         preview.requestLayout()
     }
 

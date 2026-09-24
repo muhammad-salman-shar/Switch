@@ -23,13 +23,15 @@ import android.util.TypedValue
 import android.view.Gravity
 import android.view.MotionEvent
 import android.view.WindowManager
-import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 import com.salmanshar.appswitch.model.ButtonConfig
 import com.salmanshar.appswitch.model.ConfigRepository
+import com.salmanshar.appswitch.model.MiniTimer
 import kotlin.math.abs
+import kotlin.math.cos
+import kotlin.math.sin
 
 class FloatingService : Service() {
     private lateinit var wm: WindowManager
@@ -51,7 +53,7 @@ class FloatingService : Service() {
         val miniViews = mutableListOf<TextView>()
         var timerActive = false
         var longPressRunnable: Runnable? = null
-        val panelViews = mutableListOf<TextView>()
+        val menuViews = mutableListOf<TextView>()
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
@@ -69,18 +71,27 @@ class FloatingService : Service() {
 
     private fun rebuild() {
         holders.forEach { h ->
-            clearMinis(h); clearChildren(h); clearPanel(h)
+            clearMenu(h); clearMinis(h); clearChildren(h)
             runCatching { wm.removeView(h.view) }
         }
         holders.clear()
         repo.loadButtons().forEach { addHolder(it) }
     }
 
-    private fun openEditor(cfg: ButtonConfig) {
-        val target = if (cfg.type == 0) EditTimerActivity::class.java else EditButtonActivity::class.java
+    private fun overlayType(): Int =
+        if (Build.VERSION.SDK_INT >= 26) WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
+        else @Suppress("DEPRECATION") WindowManager.LayoutParams.TYPE_PHONE
+
+    private fun openEditor(cfg: ButtonConfig, miniIndex: Int = -1) {
+        val target = when {
+            cfg.type == 0 && miniIndex >= 0 -> EditMiniActivity::class.java
+            cfg.type == 0 -> EditTimerActivity::class.java
+            else -> EditButtonActivity::class.java
+        }
         val i = Intent(this, target).apply {
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             putExtra("id", cfg.id)
+            if (miniIndex >= 0) putExtra("miniIndex", miniIndex)
         }
         startActivity(i)
     }
@@ -95,8 +106,7 @@ class FloatingService : Service() {
         val params = WindowManager.LayoutParams(
             WindowManager.LayoutParams.WRAP_CONTENT,
             WindowManager.LayoutParams.WRAP_CONTENT,
-            if (Build.VERSION.SDK_INT >= 26) WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
-            else @Suppress("DEPRECATION") WindowManager.LayoutParams.TYPE_PHONE,
+            overlayType(),
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
             PixelFormat.TRANSLUCENT,
         ).apply {
@@ -111,9 +121,8 @@ class FloatingService : Service() {
                 MotionEvent.ACTION_DOWN -> {
                     downX = e.rawX; downY = e.rawY; startX = params.x; startY = params.y
                     dragged = false
-                    holder.longPressRunnable = Runnable {
-                        if (!dragged) onLongPress(holder)
-                    }.also { handler.postDelayed(it, 2000) }
+                    holder.longPressRunnable = Runnable { if (!dragged) onLongPress(holder) }
+                        .also { handler.postDelayed(it, 800) }
                     true
                 }
                 MotionEvent.ACTION_MOVE -> {
@@ -135,9 +144,7 @@ class FloatingService : Service() {
                     holder.longPressRunnable?.let { handler.removeCallbacks(it) }
                     holder.longPressRunnable = null
                     if (!dragged) onTap(holder)
-                    else {
-                        cfg.posX = params.x; cfg.posY = params.y; repo.updateButton(cfg)
-                    }
+                    else { cfg.posX = params.x; cfg.posY = params.y; repo.updateButton(cfg) }
                     true
                 }
                 MotionEvent.ACTION_CANCEL -> {
@@ -154,7 +161,62 @@ class FloatingService : Service() {
     }
 
     private fun onLongPress(h: Holder) {
-        if (h.config.type == 0) showTimerPanel(h) else openEditor(h.config)
+        if (h.config.type == 0) {
+            showMenu(h, listOf(
+                "Edit" to { openEditor(h.config) },
+                "Delete" to {
+                    repo.deleteButton(h.config.id)
+                    rebuild()
+                },
+                "Add" to { addMiniQuick(h) },
+            ))
+        } else {
+            openEditor(h.config)
+        }
+    }
+
+    private fun clearMenu(h: Holder) {
+        h.menuViews.forEach { runCatching { wm.removeView(it) } }
+        h.menuViews.clear()
+    }
+
+    private fun showMenu(h: Holder, items: List<Pair<String, () -> Unit>>) {
+        clearMenu(h)
+        val dens = resources.displayMetrics.density
+        val itemH = (44 * dens).toInt()
+        val menuW = (170 * dens).toInt()
+        val startX = h.params.x
+        val startY = h.params.y + (h.config.sizeDp * dens).toInt() + (8 * dens).toInt()
+        items.forEachIndexed { i, (label, action) ->
+            val v = TextView(this).apply {
+                text = label
+                textSize = 15f
+                setTextColor(Color.WHITE)
+                gravity = Gravity.CENTER_VERTICAL or Gravity.START
+                setPadding((16 * dens).toInt(), 0, 0, 0)
+                typeface = Typeface.DEFAULT_BOLD
+                background = GradientDrawable().apply {
+                    setColor(0xFF37474F.toInt())
+                    cornerRadius = 10f * dens
+                }
+                isClickable = true
+                setOnClickListener {
+                    clearMenu(h)
+                    action()
+                }
+            }
+            val pp = WindowManager.LayoutParams(
+                menuW, itemH, overlayType(),
+                WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
+                PixelFormat.TRANSLUCENT,
+            ).apply {
+                gravity = Gravity.TOP or Gravity.START
+                x = startX
+                y = startY + i * (itemH + (6 * dens).toInt())
+            }
+            wm.addView(v, pp)
+            h.menuViews.add(v)
+        }
     }
 
     private fun clearChildren(h: Holder) {
@@ -168,46 +230,44 @@ class FloatingService : Service() {
         h.miniViews.clear()
     }
 
-    private fun clearPanel(h: Holder) {
-        h.panelViews.forEach { runCatching { wm.removeView(it) } }
-        h.panelViews.clear()
-    }
-
     private fun layoutChildren(h: Holder) {
+        val dens = resources.displayMetrics.density
+        val mainSize = (h.config.sizeDp * dens).toInt()
         h.childViews.forEachIndexed { i, v ->
             val pp = v.tag as? WindowManager.LayoutParams ?: return@forEachIndexed
-            val mainSize = (h.config.sizeDp * resources.displayMetrics.density).toInt()
-            pp.x = h.params.x + mainSize + (12 * resources.displayMetrics.density).toInt()
-            pp.y = h.params.y + i * ((h.config.subButtons.getOrNull(i)?.sizeDp ?: 45) * resources.displayMetrics.density).toInt() +
-                   i * (8 * resources.displayMetrics.density).toInt()
+            val sp = (h.config.subButtons.getOrNull(i)?.sizeDp ?: 45) * dens
+            pp.x = h.params.x + mainSize + (12 * dens).toInt()
+            pp.y = h.params.y + (i * (sp + 8 * dens)).toInt()
             wm.updateViewLayout(v, pp)
         }
     }
 
     private fun layoutMinis(h: Holder) {
-        val ringSize = h.config.sizeDp * resources.displayMetrics.density
+        val dens = resources.displayMetrics.density
+        val ringSize = h.config.sizeDp * dens
         val cx = h.params.x + ringSize / 2f
         val cy = h.params.y + ringSize / 2f
         val radius = ringSize * 0.32f
         val n = h.config.minis.size
         if (n == 0) return
         h.miniViews.forEachIndexed { i, v ->
-            val mini = h.config.minis[i]
+            val mini = h.config.minis.getOrNull(i) ?: return@forEachIndexed
             val angle = 2.0 * Math.PI * i / n - Math.PI / 2
             val pp = v.tag as? WindowManager.LayoutParams ?: return@forEachIndexed
-            pp.x = (cx + radius * Math.cos(angle) - mini.sizeDp * resources.displayMetrics.density / 2).toInt()
-            pp.y = (cy + radius * Math.sin(angle) - mini.sizeDp * resources.displayMetrics.density / 2).toInt()
+            pp.x = (cx + radius * cos(angle) - mini.sizeDp * dens / 2).toInt()
+            pp.y = (cy + radius * sin(angle) - mini.sizeDp * dens / 2).toInt()
             wm.updateViewLayout(v, pp)
         }
     }
 
+    @SuppressLint("ClickableViewAccessibility")
     private fun spawnMinis(h: Holder) {
         clearMinis(h)
-        val n = h.config.minis.size
-        if (n == 0) return
+        val dens = resources.displayMetrics.density
+        if (h.config.minis.isEmpty()) return
         h.config.minis.forEachIndexed { i, mini ->
+            val sp = (mini.sizeDp * dens).toInt()
             val v = TextView(this).apply {
-                val sp = (mini.sizeDp * resources.displayMetrics.density).toInt()
                 width = sp; height = sp
                 text = mini.name
                 setTextColor(Color.WHITE)
@@ -218,81 +278,137 @@ class FloatingService : Service() {
                     shape = GradientDrawable.OVAL
                     setColor(mini.color)
                 }
-                alpha = (mini.alpha / 100f)
+                alpha = mini.alpha / 100f
             }
+            var miniDown = 0L
+            var miniDragged = false
+            var mDownX = 0f; var mDownY = 0f; var mStartX = 0; var mStartY = 0
             val pp = WindowManager.LayoutParams(
                 WindowManager.LayoutParams.WRAP_CONTENT,
                 WindowManager.LayoutParams.WRAP_CONTENT,
-                if (Build.VERSION.SDK_INT >= 26) WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
-                else @Suppress("DEPRECATION") WindowManager.LayoutParams.TYPE_PHONE,
-                WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE,
+                overlayType(),
+                WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
                 PixelFormat.TRANSLUCENT,
             ).apply { gravity = Gravity.TOP or Gravity.START }
             v.tag = pp
+            v.setOnTouchListener { _, e ->
+                when (e.action) {
+                    MotionEvent.ACTION_DOWN -> {
+                        miniDown = System.currentTimeMillis()
+                        miniDragged = false
+                        mDownX = e.rawX; mDownY = e.rawY; mStartX = pp.x; mStartY = pp.y
+                        true
+                    }
+                    MotionEvent.ACTION_MOVE -> {
+                        val dx = e.rawX - mDownX; val dy = e.rawY - mDownY
+                        if (abs(dx) > 15f || abs(dy) > 15f) miniDragged = true
+                        if (miniDragged) {
+                            pp.x = mStartX + dx.toInt(); pp.y = mStartY + dy.toInt()
+                            wm.updateViewLayout(v, pp)
+                        }
+                        true
+                    }
+                    MotionEvent.ACTION_UP -> {
+                        val held = System.currentTimeMillis() - miniDown
+                        if (!miniDragged && held > 700) {
+                            showMiniMenu(h, i)
+                        } else if (!miniDragged) {
+                            fireMiniView(v)
+                        }
+                        true
+                    }
+                    else -> false
+                }
+            }
             wm.addView(v, pp)
             h.miniViews.add(v)
         }
         layoutMinis(h)
     }
 
-    private fun showTimerPanel(h: Holder) {
-        if (h.panelViews.isNotEmpty()) { clearPanel(h); return }
-        val base = h.config.sizeDp * resources.displayMetrics.density
-        val panelSize = (36 * resources.displayMetrics.density).toInt()
-        val gap = (10 * resources.displayMetrics.density).toInt()
-        val items = listOf("+" to { addMiniQuick(h) }, "⚙" to { openEditor(h.config); clearPanel(h) }, "✕" to { clearPanel(h) })
+    private fun showMiniMenu(h: Holder, idx: Int) {
+        val dens = resources.displayMetrics.density
+        val itemH = (44 * dens).toInt()
+        val menuW = (150 * dens).toInt()
+        val miniView = h.miniViews.getOrNull(idx) ?: return
+        val pp = miniView.tag as? WindowManager.LayoutParams ?: return
+        val items = listOf(
+            "Edit" to { openEditor(h.config, idx) },
+            "Delete" to {
+                if (idx in h.config.minis.indices) {
+                    h.config.minis.removeAt(idx)
+                    repo.updateButton(h.config)
+                    spawnMinis(h)
+                }
+            },
+        )
+        val existing = h.menuViews.toList()
+        existing.forEach { runCatching { wm.removeView(it) } }
+        h.menuViews.clear()
         items.forEachIndexed { i, (label, action) ->
             val v = TextView(this).apply {
                 text = label
-                textSize = 18f
+                textSize = 15f
                 setTextColor(Color.WHITE)
-                gravity = Gravity.CENTER
-                width = panelSize; height = panelSize
+                gravity = Gravity.CENTER_VERTICAL or Gravity.START
+                setPadding((16 * dens).toInt(), 0, 0, 0)
                 typeface = Typeface.DEFAULT_BOLD
                 background = GradientDrawable().apply {
-                    shape = GradientDrawable.OVAL
-                    setColor(0xFF37474F.toInt())
+                    setColor(0xFF263238.toInt())
+                    cornerRadius = 10f * dens
                 }
-                setOnClickListener { action() }
+                isClickable = true
+                setOnClickListener {
+                    h.menuViews.forEach { runCatching { wm.removeView(it) } }
+                    h.menuViews.clear()
+                    action()
+                }
             }
-            val pp = WindowManager.LayoutParams(
-                panelSize, panelSize,
-                if (Build.VERSION.SDK_INT >= 26) WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
-                else @Suppress("DEPRECATION") WindowManager.LayoutParams.TYPE_PHONE,
+            val mpp = WindowManager.LayoutParams(
+                menuW, itemH, overlayType(),
                 WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
                 PixelFormat.TRANSLUCENT,
             ).apply {
                 gravity = Gravity.TOP or Gravity.START
-                x = h.params.x - (i + 1) * (panelSize + gap)
-                y = h.params.y + (base / 2).toInt() - panelSize / 2
+                x = pp.x + pp.width + (4 * dens).toInt()
+                y = pp.y + i * (itemH + (6 * dens).toInt())
             }
-            wm.addView(v, pp)
-            h.panelViews.add(v)
+            wm.addView(v, mpp)
+            h.menuViews.add(v)
         }
+    }
+
+    private fun fireMiniView(v: TextView) {
+        v.animate().scaleX(1.4f).scaleY(1.4f).setDuration(60).withEndAction {
+            v.animate().scaleX(1f).scaleY(1f).setDuration(60).start()
+        }.start()
     }
 
     private fun addMiniQuick(h: Holder) {
         if (h.config.minis.size >= 6) return
-        val next = (h.config.minis.maxOfOrNull { it.delayMs } ?: 0L) + 500L
-        h.config.minis.add(com.salmanshar.appswitch.model.MiniTimer(delayMs = next, name = "m${h.config.minis.size + 1}"))
+        val next = (h.config.minis.maxOfOrNull { it.delayMs } ?: -500L) + 500L
+        h.config.minis.add(MiniTimer(
+            delayMs = next.coerceIn(0L, 5000L),
+            name = "m${h.config.minis.size + 1}",
+        ))
         repo.updateButton(h.config)
-        clearPanel(h)
-        if (h.timerActive) { spawnMinis(h) }
+        if (h.timerActive) spawnMinis(h)
     }
 
     private fun applyVisual(h: Holder) {
-        val p = (h.config.sizeDp * resources.displayMetrics.density).toInt()
+        val dens = resources.displayMetrics.density
+        val p = (h.config.sizeDp * dens).toInt()
         h.view.width = p; h.view.height = p; h.view.requestLayout()
-        h.view.setTextSize(TypedValue.COMPLEX_UNIT_PX, p * 0.4f)
+        h.view.setTextSize(TypedValue.COMPLEX_UNIT_PX, p * 0.35f)
+        h.view.alpha = h.config.alpha / 100f
         val cfg = h.config
         if (cfg.type == 0) {
-            val nm = cfg.subButtons.getOrNull(0)?.name ?: ""
-            h.view.text = nm
+            h.view.text = cfg.name
             h.view.setTextColor(Color.WHITE)
             h.view.background = GradientDrawable().apply {
                 shape = GradientDrawable.OVAL
                 setColor(Color.TRANSPARENT)
-                setStroke((2 * resources.displayMetrics.density).toInt(),
+                setStroke((2 * dens).toInt(),
                     if (h.timerActive) 0xFFFF1744.toInt() else 0xFF00E676.toInt())
             }
             return
@@ -339,48 +455,32 @@ class FloatingService : Service() {
 
     private fun toggleTimer(h: Holder) {
         if (h.timerActive) {
-            stopTimer(h)
-        } else {
-            h.timerActive = true
+            h.timerActive = false
+            clearMinis(h)
             applyVisual(h)
-            spawnMinis(h)
-            val now = System.currentTimeMillis()
-            h.config.minis.forEachIndexed { idx, mini ->
-                val target = now + mini.delayMs
-                if (mini.role == "single") {
-                    val d = (target - System.currentTimeMillis()).coerceAtLeast(0L)
-                    handler.postDelayed({ fireMini(h, idx) }, d)
-                } else {
-                    val interval = (mini.windowMs / mini.tapsCount.coerceAtLeast(1)).coerceAtLeast(1L)
-                    repeat(mini.tapsCount) { k ->
-                        val t = target + k * interval
-                        val d = (t - System.currentTimeMillis()).coerceAtLeast(0L)
-                        handler.postDelayed({ fireMini(h, idx) }, d)
-                    }
-                }
-            }
+            return
         }
-    }
-
-    private fun stopTimer(h: Holder) {
-        h.timerActive = false
-        clearMinis(h)
+        h.timerActive = true
         applyVisual(h)
+        spawnMinis(h)
+        h.config.minis.forEachIndexed { idx, mini ->
+            val delay = mini.delayMs.coerceIn(0L, 5000L)
+            handler.postDelayed({ fireMini(h, idx) }, delay)
+        }
     }
 
     private fun fireMini(h: Holder, idx: Int) {
         val v = h.miniViews.getOrNull(idx) ?: return
-        v.animate().scaleX(1.4f).scaleY(1.4f).setDuration(50).withEndAction {
-            v.animate().scaleX(1f).scaleY(1f).setDuration(50).start()
-        }.start()
+        fireMiniView(v)
     }
 
     private fun toggleExpander(h: Holder) {
         if (h.isExpanded) { clearChildren(h); return }
+        val dens = resources.displayMetrics.density
         val subs = h.config.subButtons
-        val mainSize = (h.config.sizeDp * resources.displayMetrics.density).toInt()
+        val mainSize = (h.config.sizeDp * dens).toInt()
         subs.forEachIndexed { i, sub ->
-            val sp = (sub.sizeDp * resources.displayMetrics.density).toInt()
+            val sp = (sub.sizeDp * dens).toInt()
             val v = TextView(this).apply {
                 text = displayName(sub)
                 setTextColor(Color.WHITE)
@@ -398,14 +498,13 @@ class FloatingService : Service() {
             val pp = WindowManager.LayoutParams(
                 WindowManager.LayoutParams.WRAP_CONTENT,
                 WindowManager.LayoutParams.WRAP_CONTENT,
-                if (Build.VERSION.SDK_INT >= 26) WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
-                else @Suppress("DEPRECATION") WindowManager.LayoutParams.TYPE_PHONE,
+                overlayType(),
                 WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
                 PixelFormat.TRANSLUCENT,
             ).apply {
                 gravity = Gravity.TOP or Gravity.START
-                x = h.params.x + mainSize + (12 * resources.displayMetrics.density).toInt()
-                y = h.params.y + i * (sp + (8 * resources.displayMetrics.density).toInt())
+                x = h.params.x + mainSize + (12 * dens).toInt()
+                y = h.params.y + i * (sp + (8 * dens).toInt())
             }
             v.tag = pp
             wm.addView(v, pp)
@@ -471,7 +570,7 @@ class FloatingService : Service() {
         handler.removeCallbacks(poll)
         runCatching { unregisterReceiver(reloadReceiver) }
         holders.forEach { h ->
-            clearMinis(h); clearChildren(h); clearPanel(h)
+            clearMenu(h); clearMinis(h); clearChildren(h)
             runCatching { wm.removeView(h.view) }
         }
         super.onDestroy()
