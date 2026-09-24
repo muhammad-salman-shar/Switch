@@ -14,12 +14,15 @@ data class MiniTimer(
     var posX: Int = -1,
     var posY: Int = -1,
     var locked: Boolean = false,
+    var offsetX: Int = 0,
+    var offsetY: Int = 0,
 ) {
     fun toJson(): JSONObject = JSONObject().apply {
         put("role", role); put("delayMs", delayMs); put("tapsCount", tapsCount)
         put("windowMs", windowMs); put("sizeDp", sizeDp); put("alpha", alpha)
         put("color", color); put("name", name)
         put("posX", posX); put("posY", posY); put("locked", locked)
+        put("offsetX", offsetX); put("offsetY", offsetY)
     }
     companion object {
         fun fromJson(o: JSONObject) = MiniTimer(
@@ -34,6 +37,8 @@ data class MiniTimer(
             posX = o.optInt("posX", -1),
             posY = o.optInt("posY", -1),
             locked = o.optBoolean("locked", false),
+            offsetX = o.optInt("offsetX", 0),
+            offsetY = o.optInt("offsetY", 0),
         )
     }
 }
