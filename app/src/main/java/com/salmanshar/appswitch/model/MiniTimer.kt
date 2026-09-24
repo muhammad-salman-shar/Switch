@@ -10,10 +10,12 @@ data class MiniTimer(
     var sizeDp: Int = 22,
     var alpha: Int = 80,
     var color: Int = 0xFFFFFFFF.toInt(),
+    var name: String = "",
 ) {
     fun toJson(): JSONObject = JSONObject().apply {
         put("role", role); put("delayMs", delayMs); put("tapsCount", tapsCount)
-        put("windowMs", windowMs); put("sizeDp", sizeDp); put("alpha", alpha); put("color", color)
+        put("windowMs", windowMs); put("sizeDp", sizeDp); put("alpha", alpha)
+        put("color", color); put("name", name)
     }
     companion object {
         fun fromJson(o: JSONObject) = MiniTimer(
@@ -24,6 +26,7 @@ data class MiniTimer(
             sizeDp = o.optInt("sizeDp", 22),
             alpha = o.optInt("alpha", 80),
             color = o.optInt("color", 0xFFFFFFFF.toInt()),
+            name = o.optString("name", ""),
         )
     }
 }
