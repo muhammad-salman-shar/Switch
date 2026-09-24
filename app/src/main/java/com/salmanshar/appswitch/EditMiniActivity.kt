@@ -106,6 +106,25 @@ class EditMiniActivity : AppCompatActivity() {
         root.addView(row)
 
         root.addView(TextView(this).apply {
+            text = "Tap offset X: ${mini.offsetX}dp"; setPadding(0, 24, 0, 0)
+        })
+        root.addView(EditText(this).apply {
+            inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_SIGNED
+            filters = arrayOf(InputFilter.LengthFilter(4))
+            setText(mini.offsetX.toString())
+            addTextChangedListener(simple { s -> mini.offsetX = s.toIntOrNull() ?: 0 })
+        })
+        root.addView(TextView(this).apply {
+            text = "Tap offset Y: ${mini.offsetY}dp"; setPadding(0, 12, 0, 0)
+        })
+        root.addView(EditText(this).apply {
+            inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_SIGNED
+            filters = arrayOf(InputFilter.LengthFilter(4))
+            setText(mini.offsetY.toString())
+            addTextChangedListener(simple { s -> mini.offsetY = s.toIntOrNull() ?: 0 })
+        })
+
+        root.addView(TextView(this).apply {
             text = "Position: (${mini.posX}, ${mini.posY})   Locked: ${mini.locked}"
             setPadding(0, 24, 0, 0)
         })
