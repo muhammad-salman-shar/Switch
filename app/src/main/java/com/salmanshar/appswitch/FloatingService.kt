@@ -421,25 +421,21 @@ class FloatingService : Service() {
         val hh = if (pp.height > 0) pp.height else (mini.sizeDp * dens).toInt()
         val cx = pp.x + w / 2f + (mini.offsetX * dens)
         val cy = pp.y + hh / 2f + (mini.offsetY * dens)
-        Log.d("SwitchTap", "mini#$idx lp=(${pp.x},${pp.y}) size=(${w},${hh}) tap=($cx,$cy)")
         val svc = AutoTapService.instance
         if (svc == null) {
-            Toast.makeText(this, "Accessibility off — tap skip", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, "Accessibility off — ON karo", Toast.LENGTH_SHORT).show()
             fireMiniView(v)
             return
         }
-        // Temporarily disable touch on this mini so gesture passes through to app below
-        val origFlags = pp.flags
-        pp.flags = origFlags or WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
-        runCatching { wm.updateViewLayout(v, pp) }
+        runCatching { wm.removeView(v) }
         handler.postDelayed({
-            svc.tap(cx, cy)
-            fireMiniView(v)
+            val ok = svc.tap(cx, cy)
+            if (!ok) Toast.makeText(this, "dispatch failed ($cx,$cy)", Toast.LENGTH_SHORT).show()
             handler.postDelayed({
-                pp.flags = origFlags
-                runCatching { wm.updateViewLayout(v, pp) }
-            }, 120L)
-        }, 30L)
+                runCatching { wm.addView(v, pp) }
+                fireMiniView(v)
+            }, 70L)
+        }, 90L)
     }
 
     private fun addMiniQuick(h: Holder) {
