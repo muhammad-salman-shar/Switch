@@ -454,23 +454,41 @@ class FloatingService : Service() {
     }
 
     private fun toggleTimer(h: Holder) {
-        if (h.timerActive) {
-            h.timerActive = false
-            clearMinis(h)
-            applyVisual(h)
-            return
-        }
+        if (h.timerActive) return
         h.timerActive = true
         applyVisual(h)
         spawnMinis(h)
-        h.config.minis.forEachIndexed { idx, mini ->
-            val delay = mini.delayMs.coerceIn(0L, 5000L)
-            handler.postDelayed({ fireMini(h, idx) }, delay)
+        runRound(h, 1)
+    }
+
+    private fun runRound(h: Holder, round: Int) {
+        if (!h.timerActive) return
+        if (round > 2) { stopTimer(h); return }
+        val minis = h.config.minis
+        if (minis.isEmpty()) { stopTimer(h); return }
+        var maxD = 0L
+        minis.forEachIndexed { idx, mini ->
+            val d = mini.delayMs.coerceIn(0L, 5000L)
+            if (d > maxD) maxD = d
+            handler.postDelayed({ fireMini(h, idx) }, d)
         }
+        handler.postDelayed({ runRound(h, round + 1) }, maxD + 60L)
+    }
+
+    private fun stopTimer(h: Holder) {
+        h.timerActive = false
+        clearMinis(h)
+        applyVisual(h)
     }
 
     private fun fireMini(h: Holder, idx: Int) {
         val v = h.miniViews.getOrNull(idx) ?: return
+        val pp = v.tag as? WindowManager.LayoutParams
+        if (pp != null) {
+            val cx = pp.x + v.width / 2f
+            val cy = pp.y + v.height / 2f
+            AutoTapService.instance?.tap(cx, cy)
+        }
         fireMiniView(v)
     }
 

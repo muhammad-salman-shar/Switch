@@ -50,6 +50,10 @@ class MainActivity : AppCompatActivity() {
             setOnClickListener { startActivity(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS)) }
         })
         root.addView(Button(this).apply {
+            text = "Grant Accessibility (auto-tap)"
+            setOnClickListener { startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) }
+        })
+        root.addView(Button(this).apply {
             text = "Start Floating"
             setOnClickListener {
                 ContextCompat.startForegroundService(this@MainActivity, Intent(this@MainActivity, FloatingService::class.java))
@@ -76,7 +80,8 @@ class MainActivity : AppCompatActivity() {
 
     private fun refresh() {
         val ov = Settings.canDrawOverlays(this)
-        status.text = "Overlay: ${if (ov) "OK" else "MISSING"}   Usage: ${if (hasUsageAccess()) "OK" else "MISSING"}"
+        val ax = AutoTapService.instance != null
+        status.text = "Overlay: ${if (ov) "OK" else "MISSING"}   Usage: ${if (hasUsageAccess()) "OK" else "MISSING"}   AutoTap: ${if (ax) "OK" else "MISSING"}"
         listLayout.removeAllViews()
         val buttons = repo.loadButtons()
         if (buttons.isEmpty()) listLayout.addView(TextView(this).apply { text = "Koi button nahi. Plus se add karo." })
