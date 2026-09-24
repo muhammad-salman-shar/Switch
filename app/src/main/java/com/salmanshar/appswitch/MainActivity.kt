@@ -4,6 +4,7 @@ import android.Manifest
 import android.app.AppOpsManager
 import android.content.Context
 import android.content.Intent
+import android.content.SharedPreferences
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
@@ -22,12 +23,15 @@ import com.salmanshar.appswitch.model.ConfigRepository
 
 class MainActivity : AppCompatActivity() {
     private lateinit var repo: ConfigRepository
+    private lateinit var prefs: SharedPreferences
     private lateinit var listLayout: LinearLayout
     private lateinit var status: TextView
+    private var dialogOpen = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         repo = ConfigRepository(this)
+        prefs = getSharedPreferences("switch", MODE_PRIVATE)
         if (Build.VERSION.SDK_INT >= 33 &&
             checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
             requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 1)
@@ -41,13 +45,11 @@ class MainActivity : AppCompatActivity() {
         root.addView(status)
         root.addView(Button(this).apply {
             text = "Grant Overlay"
-            setOnClickListener {
-                startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:$packageName")))
-            }
+            setOnClickListener { openOverlaySettings() }
         })
         root.addView(Button(this).apply {
             text = "Grant Usage Access"
-            setOnClickListener { startActivity(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS)) }
+            setOnClickListener { openUsageSettings() }
         })
         root.addView(Button(this).apply {
             text = "Grant Accessibility (auto-tap)"
@@ -74,14 +76,18 @@ class MainActivity : AppCompatActivity() {
         root.addView(ScrollView(this).apply { addView(listLayout) }, LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f))
         setContentView(root)
+        root.post { maybePrompt() }
     }
 
-    override fun onResume() { super.onResume(); refresh() }
+    override fun onResume() { super.onResume(); refresh(); rootPromptCheck() }
+
+    private fun rootPromptCheck() { listLayout.postDelayed({ maybePrompt() }, 250) }
 
     private fun refresh() {
         val ov = Settings.canDrawOverlays(this)
+        val ux = hasUsageAccess()
         val ax = AutoTapService.instance != null
-        status.text = "Overlay: ${if (ov) "OK" else "MISSING"}   Usage: ${if (hasUsageAccess()) "OK" else "MISSING"}   AutoTap: ${if (ax) "OK" else "MISSING"}"
+        status.text = "Overlay: ${if (ov) "OK" else "MISSING"}   Usage: ${if (ux) "OK" else "MISSING"}   AutoTap: ${if (ax) "OK" else "MISSING"}"
         listLayout.removeAllViews()
         val buttons = repo.loadButtons()
         if (buttons.isEmpty()) listLayout.addView(TextView(this).apply { text = "Koi button nahi. Plus se add karo." })
@@ -117,6 +123,70 @@ class MainActivity : AppCompatActivity() {
                 }
             })
             listLayout.addView(row)
+        }
+    }
+
+    private fun maybePrompt() {
+        if (dialogOpen) return
+        val overlayOk = Settings.canDrawOverlays(this)
+        val usageOk = hasUsageAccess()
+        val overlayLater = prefs.getBoolean("laterOverlay", false)
+        val usageLater = prefs.getBoolean("laterUsage", false)
+
+        if (!overlayOk && !overlayLater) {
+            dialogOpen = true
+            AlertDialog.Builder(this)
+                .setTitle("Overlay permission")
+                .setMessage("Switch ko floating button dikhane ke liye overlay permission chahiye. Agli screen pe Switch ko 'Allow' karo.")
+                .setPositiveButton("Open") { _, _ ->
+                    dialogOpen = false
+                    openOverlaySettings()
+                }
+                .setNegativeButton("Later") { _, _ ->
+                    dialogOpen = false
+                    prefs.edit().putBoolean("laterOverlay", true).apply()
+                }
+                .setOnCancelListener { dialogOpen = false }
+                .show()
+            return
+        }
+        if (overlayOk) prefs.edit().putBoolean("laterOverlay", false).apply()
+
+        if (!usageOk && !usageLater) {
+            dialogOpen = true
+            AlertDialog.Builder(this)
+                .setTitle("Usage access")
+                .setMessage("Switch ko current foreground app detect karne ke liye usage access chahiye. Agli list me 'Switch' dhundho aur ON karo.")
+                .setPositiveButton("Open") { _, _ ->
+                    dialogOpen = false
+                    openUsageSettings()
+                }
+                .setNegativeButton("Later") { _, _ ->
+                    dialogOpen = false
+                    prefs.edit().putBoolean("laterUsage", true).apply()
+                }
+                .setOnCancelListener { dialogOpen = false }
+                .show()
+            return
+        }
+        if (usageOk) prefs.edit().putBoolean("laterUsage", false).apply()
+    }
+
+    private fun openOverlaySettings() {
+        try {
+            startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:$packageName")))
+        } catch (_: Exception) {
+            startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION))
+        }
+    }
+
+    private fun openUsageSettings() {
+        try {
+            val i = Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS)
+            i.data = Uri.parse("package:$packageName")
+            startActivity(i)
+        } catch (_: Exception) {
+            startActivity(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS))
         }
     }
 
