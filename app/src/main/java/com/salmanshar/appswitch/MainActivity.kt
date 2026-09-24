@@ -1,131 +1,153 @@
 package com.salmanshar.appswitch
 
+import android.Manifest
 import android.app.AppOpsManager
 import android.content.Context
 import android.content.Intent
-import android.content.SharedPreferences
+import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
+import android.view.Gravity
 import android.widget.Button
 import android.widget.LinearLayout
-import android.widget.SeekBar
+import android.widget.ScrollView
 import android.widget.TextView
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
+import com.salmanshar.appswitch.model.ButtonConfig
+import com.salmanshar.appswitch.model.ConfigRepository
 
 class MainActivity : AppCompatActivity() {
-    private lateinit var prefs: SharedPreferences
+    private lateinit var repo: ConfigRepository
+    private lateinit var listLayout: LinearLayout
     private lateinit var status: TextView
-    private lateinit var sizeLabel: TextView
-    private lateinit var btnA: Button
-    private lateinit var btnB: Button
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        prefs = getSharedPreferences("switch", MODE_PRIVATE)
-        val ll = LinearLayout(this).apply {
+        repo = ConfigRepository(this)
+        if (Build.VERSION.SDK_INT >= 33 &&
+            checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+            requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 1)
+        }
+
+        val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(48, 96, 48, 48)
         }
-        ll.addView(TextView(this).apply { text = "Switch Setup"; textSize = 20f })
-        status = TextView(this).apply { textSize = 14f; setPadding(0, 24, 0, 24) }
-        ll.addView(status)
-
-        btnA = Button(this).apply {
-            setOnClickListener { pickApp { pkg -> prefs.edit().putString("pkgA", pkg).apply(); refresh() } }
-        }
-        btnB = Button(this).apply {
-            setOnClickListener { pickApp { pkg -> prefs.edit().putString("pkgB", pkg).apply(); refresh() } }
-        }
-        ll.addView(btnA); ll.addView(btnB)
-
-        sizeLabel = TextView(this).apply {
-            textSize = 14f
-            setPadding(0, 32, 0, 0)
-            text = "Button size: ${prefs.getInt("sizeDp", 45)}dp"
-        }
-        ll.addView(sizeLabel)
-        ll.addView(SeekBar(this).apply {
-            max = 80 - 24
-            progress = prefs.getInt("sizeDp", 45) - 24
-            setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
-                override fun onProgressChanged(sb: SeekBar?, p: Int, fromUser: Boolean) {
-                    val dp = p + 24
-                    prefs.edit().putInt("sizeDp", dp).apply()
-                    sizeLabel.text = "Button size: ${dp}dp"
-                }
-                override fun onStartTrackingTouch(sb: SeekBar?) {}
-                override fun onStopTrackingTouch(sb: SeekBar?) {}
-            })
-        })
-
-        ll.addView(Button(this).apply {
-            text = "1. Grant Overlay"
+        root.addView(TextView(this).apply { text = "Switch"; textSize = 22f })
+        status = TextView(this).apply { textSize = 13f; setPadding(0, 12, 0, 12) }
+        root.addView(status)
+        root.addView(Button(this).apply {
+            text = "Grant Overlay"
             setOnClickListener {
                 startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:$packageName")))
             }
         })
-        ll.addView(Button(this).apply {
-            text = "2. Grant Usage Access"
+        root.addView(Button(this).apply {
+            text = "Grant Usage Access"
             setOnClickListener { startActivity(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS)) }
         })
-        ll.addView(Button(this).apply {
-            text = "3. Start Floating Button"
+        root.addView(Button(this).apply {
+            text = "Start Floating"
             setOnClickListener {
-                if (prefs.getString("pkgA", "").isNullOrEmpty() || prefs.getString("pkgB", "").isNullOrEmpty()) {
-                    status.text = "Pehle App A aur App B dono pick karo."
-                    return@setOnClickListener
-                }
                 ContextCompat.startForegroundService(this@MainActivity, Intent(this@MainActivity, FloatingService::class.java))
             }
         })
-        ll.addView(Button(this).apply {
-            text = "Stop Floating Button"
+        root.addView(Button(this).apply {
+            text = "Stop Floating"
             setOnClickListener { stopService(Intent(this@MainActivity, FloatingService::class.java)) }
         })
-        setContentView(ll)
+        root.addView(Button(this).apply {
+            text = "+  Add Button"
+            setOnClickListener { showAddDialog() }
+        })
+        listLayout = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(0, 24, 0, 0)
+        }
+        root.addView(ScrollView(this).apply { addView(listLayout) }, LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f))
+        setContentView(root)
     }
 
     override fun onResume() { super.onResume(); refresh() }
 
     private fun refresh() {
-        val a = prefs.getString("pkgA", "")
-        val b = prefs.getString("pkgB", "")
-        btnA.text = "App A (Green): " + (if (a.isNullOrEmpty()) "(tap to pick)" else label(a))
-        btnB.text = "App B (Blue): " + (if (b.isNullOrEmpty()) "(tap to pick)" else label(b))
         val ov = Settings.canDrawOverlays(this)
-        status.text = "Overlay: ${if (ov) "OK" else "MISSING"}   Usage access: ${if (hasUsageAccess()) "OK" else "MISSING"}"
+        status.text = "Overlay: ${if (ov) "OK" else "MISSING"}   Usage: ${if (hasUsageAccess()) "OK" else "MISSING"}"
+        listLayout.removeAllViews()
+        val buttons = repo.loadButtons()
+        if (buttons.isEmpty()) listLayout.addView(TextView(this).apply { text = "Koi button nahi. Plus se add karo." })
+        buttons.forEachIndexed { i, cfg ->
+            val row = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                setPadding(0, 12, 0, 12)
+            }
+            row.addView(TextView(this).apply {
+                text = "#${i + 1}  ${typeName(cfg.type)}"
+                textSize = 15f
+                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+            })
+            row.addView(Button(this).apply {
+                text = "Edit"
+                setOnClickListener {
+                    val it2 = Intent(this@MainActivity, EditButtonActivity::class.java)
+                    it2.putExtra("id", cfg.id)
+                    startActivity(it2)
+                }
+            })
+            row.addView(Button(this).apply {
+                text = "X"
+                setOnClickListener {
+                    AlertDialog.Builder(this@MainActivity)
+                        .setMessage("Delete button?")
+                        .setPositiveButton("Delete") { _, _ ->
+                            repo.deleteButton(cfg.id); sendReload(); refresh()
+                        }
+                        .setNegativeButton("Cancel", null).show()
+                }
+            })
+            listLayout.addView(row)
+        }
     }
 
-    private fun label(pkg: String): String = try {
-        val ai = packageManager.getApplicationInfo(pkg, 0)
-        packageManager.getApplicationLabel(ai).toString()
-    } catch (_: Exception) { pkg }
+    private fun typeName(t: Int): String = when (t) {
+        1 -> "Single app"
+        2 -> "2-app toggle"
+        3 -> "3-app cycle"
+        4 -> "4-app expander"
+        5 -> "5-app cycle"
+        else -> "${t}-app"
+    }
 
-    private fun pickApp(onPicked: (String) -> Unit) {
-        val pm = packageManager
-        val intent = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
-        @Suppress("DEPRECATION")
-        val apps = pm.queryIntentActivities(intent, 0)
-            .map { it.activityInfo.applicationInfo }
-            .distinctBy { it.packageName }
-            .sortedBy { pm.getApplicationLabel(it).toString().lowercase() }
-        val labels = apps.map { "${pm.getApplicationLabel(it)}  (${it.packageName})" }.toTypedArray()
+    private fun showAddDialog() {
+        val options = arrayOf("1 Button", "2 Buttons", "3 Buttons", "4 Buttons (expander)", "5 Buttons")
         AlertDialog.Builder(this)
-            .setTitle("Pick app")
-            .setItems(labels) { _, i -> onPicked(apps[i].packageName) }
-            .show()
+            .setTitle("Add button")
+            .setItems(options) { _, which ->
+                val cfg: ButtonConfig = ButtonConfig.new(which + 1)
+                repo.updateButton(cfg)
+                sendReload(); refresh()
+                val i = Intent(this, EditButtonActivity::class.java)
+                i.putExtra("id", cfg.id)
+                startActivity(i)
+            }.show()
+    }
+
+    private fun sendReload() {
+        sendBroadcast(Intent(FloatingService.ACTION_RELOAD).setPackage(packageName))
     }
 
     private fun hasUsageAccess(): Boolean {
         val appOps = getSystemService(Context.APP_OPS_SERVICE) as AppOpsManager
         val mode = if (Build.VERSION.SDK_INT >= 29)
             appOps.unsafeCheckOpNoThrow(AppOpsManager.OPSTR_GET_USAGE_STATS, android.os.Process.myUid(), packageName)
-        else
-            @Suppress("DEPRECATION") appOps.checkOpNoThrow(AppOpsManager.OPSTR_GET_USAGE_STATS, android.os.Process.myUid(), packageName)
+        else @Suppress("DEPRECATION")
+            appOps.checkOpNoThrow(AppOpsManager.OPSTR_GET_USAGE_STATS, android.os.Process.myUid(), packageName)
         return mode == AppOpsManager.MODE_ALLOWED
     }
 }
