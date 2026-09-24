@@ -20,6 +20,7 @@ import android.os.Build
 import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
+import android.util.Log
 import android.util.TypedValue
 import android.view.Gravity
 import android.view.MotionEvent
@@ -413,21 +414,32 @@ class FloatingService : Service() {
 
     private fun manualFire(h: Holder, idx: Int) {
         val v = h.miniViews.getOrNull(idx) ?: return
+        val pp = h.miniParams.getOrNull(idx) ?: return
         val mini = h.config.minis.getOrNull(idx) ?: return
         val dens = resources.displayMetrics.density
-        val loc = IntArray(2)
-        v.getLocationOnScreen(loc)
-        val w = if (v.width > 0) v.width else (mini.sizeDp * dens).toInt()
-        val hh = if (v.height > 0) v.height else (mini.sizeDp * dens).toInt()
-        val cx = loc[0] + w / 2f + (mini.offsetX * dens)
-        val cy = loc[1] + hh / 2f + (mini.offsetY * dens)
+        val w = if (pp.width > 0) pp.width else (mini.sizeDp * dens).toInt()
+        val hh = if (pp.height > 0) pp.height else (mini.sizeDp * dens).toInt()
+        val cx = pp.x + w / 2f + (mini.offsetX * dens)
+        val cy = pp.y + hh / 2f + (mini.offsetY * dens)
+        Log.d("SwitchTap", "mini#$idx lp=(${pp.x},${pp.y}) size=(${w},${hh}) tap=($cx,$cy)")
         val svc = AutoTapService.instance
         if (svc == null) {
             Toast.makeText(this, "Accessibility off — tap skip", Toast.LENGTH_SHORT).show()
-        } else {
-            svc.tap(cx, cy)
+            fireMiniView(v)
+            return
         }
-        fireMiniView(v)
+        // Temporarily disable touch on this mini so gesture passes through to app below
+        val origFlags = pp.flags
+        pp.flags = origFlags or WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
+        runCatching { wm.updateViewLayout(v, pp) }
+        handler.postDelayed({
+            svc.tap(cx, cy)
+            fireMiniView(v)
+            handler.postDelayed({
+                pp.flags = origFlags
+                runCatching { wm.updateViewLayout(v, pp) }
+            }, 120L)
+        }, 30L)
     }
 
     private fun addMiniQuick(h: Holder) {
