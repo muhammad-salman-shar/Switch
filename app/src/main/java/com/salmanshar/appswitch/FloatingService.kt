@@ -419,8 +419,12 @@ class FloatingService : Service() {
         val dens = resources.displayMetrics.density
         val w = if (pp.width > 0) pp.width else (mini.sizeDp * dens).toInt()
         val hh = if (pp.height > 0) pp.height else (mini.sizeDp * dens).toInt()
-        val cx = pp.x + w / 2f + (mini.offsetX * dens)
-        val cy = pp.y + hh / 2f + (mini.offsetY * dens)
+        // Use on-screen coords — pp.x/pp.y is content-area-relative (excludes status bar)
+        val loc = IntArray(2)
+        v.getLocationOnScreen(loc)
+        val cx = loc[0] + w / 2f + (mini.offsetX * dens)
+        val cy = loc[1] + hh / 2f + (mini.offsetY * dens)
+        AutoTapService.push("mini#$idx lp=(${pp.x},${pp.y}) scr=(${loc[0]},${loc[1]}) tap=($cx,$cy)")
         val svc = AutoTapService.instance
         if (svc == null) {
             Toast.makeText(this, "Accessibility off — ON karo", Toast.LENGTH_SHORT).show()
@@ -429,13 +433,13 @@ class FloatingService : Service() {
         }
         runCatching { wm.removeView(v) }
         handler.postDelayed({
-            val ok = svc.tap(cx, cy)
-            if (!ok) Toast.makeText(this, "dispatch failed ($cx,$cy)", Toast.LENGTH_SHORT).show()
+            val ok = svc.tap(cx, cy, 120L)
+            if (!ok) Toast.makeText(this, "dispatch failed", Toast.LENGTH_SHORT).show()
             handler.postDelayed({
                 runCatching { wm.addView(v, pp) }
                 fireMiniView(v)
-            }, 70L)
-        }, 90L)
+            }, 120L)
+        }, 100L)
     }
 
     private fun addMiniQuick(h: Holder) {
