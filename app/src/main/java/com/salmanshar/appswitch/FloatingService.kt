@@ -24,6 +24,7 @@ import android.view.Gravity
 import android.view.MotionEvent
 import android.view.WindowManager
 import android.widget.TextView
+import android.widget.Toast
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 import com.salmanshar.appswitch.model.ButtonConfig
@@ -101,6 +102,8 @@ class FloatingService : Service() {
             setTextColor(Color.WHITE)
             typeface = Typeface.DEFAULT_BOLD
             gravity = Gravity.CENTER
+            isClickable = true
+            isFocusable = false
         }
         val params = WindowManager.LayoutParams(
             WindowManager.LayoutParams.WRAP_CONTENT,
@@ -126,7 +129,7 @@ class FloatingService : Service() {
                 }
                 MotionEvent.ACTION_MOVE -> {
                     val dx = e.rawX - downX; val dy = e.rawY - downY
-                    if (abs(dx) > 15f || abs(dy) > 15f) {
+                    if (abs(dx) > 25f || abs(dy) > 25f) {
                         dragged = true
                         holder.longPressRunnable?.let { handler.removeCallbacks(it) }
                         holder.longPressRunnable = null
@@ -156,6 +159,7 @@ class FloatingService : Service() {
         wm.addView(view, params)
         holders.add(holder)
         applyVisual(holder)
+        if (cfg.type == 0) spawnMinis(holder)
     }
 
     private fun onLongPress(h: Holder) {
@@ -183,7 +187,7 @@ class FloatingService : Service() {
         clearMenu(h)
         val dens = resources.displayMetrics.density
         val itemH = (44 * dens).toInt()
-        val menuW = (180 * dens).toInt()
+        val menuW = (190 * dens).toInt()
         items.forEachIndexed { i, (label, action) ->
             val v = TextView(this).apply {
                 text = label
@@ -254,25 +258,25 @@ class FloatingService : Service() {
                 dirty = true
             }
             if (mini.name.isEmpty()) mini.name = "m${i + 1}"
-            val sp = (mini.sizeDp * dens).toInt().coerceAtLeast(2)
+            val sp = (mini.sizeDp * dens).toInt().coerceAtLeast((16 * dens).toInt())
+            val border = (sp * 0.08f).coerceAtLeast(2f).toInt()
             val v = TextView(this).apply {
-                width = sp; height = sp
                 text = mini.name
                 setTextColor(Color.WHITE)
                 typeface = Typeface.DEFAULT_BOLD
                 gravity = Gravity.CENTER
                 setTextSize(TypedValue.COMPLEX_UNIT_PX, (sp * 0.4f).coerceAtLeast(1f))
                 alpha = mini.alpha / 100f
-            }
-            val border = (sp * 0.08f).coerceAtLeast(2f)
-            v.background = GradientDrawable().apply {
-                shape = GradientDrawable.OVAL
-                setColor(Color.TRANSPARENT)
-                setStroke(border.toInt(), mini.color)
+                isClickable = true
+                isFocusable = false
+                background = GradientDrawable().apply {
+                    shape = GradientDrawable.OVAL
+                    setColor(0x22000000)
+                    setStroke(border, mini.color)
+                }
             }
             val pp = WindowManager.LayoutParams(
-                WindowManager.LayoutParams.WRAP_CONTENT,
-                WindowManager.LayoutParams.WRAP_CONTENT,
+                sp, sp,
                 overlayType(),
                 WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
                 PixelFormat.TRANSLUCENT,
@@ -299,14 +303,16 @@ class FloatingService : Service() {
                 MotionEvent.ACTION_DOWN -> {
                     downX = e.rawX; downY = e.rawY; startX = pp.x; startY = pp.y
                     dragged = false; downTime = System.currentTimeMillis()
-                    lp = Runnable { if (!dragged) showMiniMenu(h, idx) }
-                        .also { handler.postDelayed(it, 700) }
+                    if (!mini.locked) {
+                        lp = Runnable { if (!dragged) showMiniMenu(h, idx) }
+                            .also { handler.postDelayed(it, 600) }
+                    }
                     true
                 }
                 MotionEvent.ACTION_MOVE -> {
                     if (mini.locked) return@setOnTouchListener true
                     val dx = e.rawX - downX; val dy = e.rawY - downY
-                    if (abs(dx) > 15f || abs(dy) > 15f) {
+                    if (abs(dx) > 20f || abs(dy) > 20f) {
                         dragged = true
                         lp?.let { handler.removeCallbacks(it) }; lp = null
                     }
@@ -321,8 +327,8 @@ class FloatingService : Service() {
                     if (!mini.locked && dragged) {
                         mini.posX = pp.x; mini.posY = pp.y
                         repo.updateButton(h.config)
-                    } else if (!mini.locked && !dragged && (System.currentTimeMillis() - downTime) < 700) {
-                        fireMiniView(v)
+                    } else if (!dragged && (System.currentTimeMillis() - downTime) < 600) {
+                        manualFire(h, idx)
                     }
                     true
                 }
@@ -394,6 +400,20 @@ class FloatingService : Service() {
         }.start()
     }
 
+    private fun manualFire(h: Holder, idx: Int) {
+        val v = h.miniViews.getOrNull(idx) ?: return
+        val pp = h.miniParams.getOrNull(idx) ?: return
+        val cx = pp.x + v.width / 2f
+        val cy = pp.y + v.height / 2f
+        val svc = AutoTapService.instance
+        if (svc == null) {
+            Toast.makeText(this, "Accessibility service off — tap skip", Toast.LENGTH_SHORT).show()
+        } else {
+            svc.tap(cx, cy)
+        }
+        fireMiniView(v)
+    }
+
     private fun addMiniQuick(h: Holder) {
         if (h.config.minis.size >= 6) return
         val dens = resources.displayMetrics.density
@@ -404,10 +424,10 @@ class FloatingService : Service() {
             delayMs = next.coerceIn(0L, 5000L),
             name = "m${idx + 1}",
             posX = h.params.x + mainSize + (30 * dens).toInt(),
-            posY = h.params.y + idx * (50 * dens).toInt(),
+            posY = h.params.y + idx * ((30 + 20) * dens).toInt(),
         ))
         repo.updateButton(h.config)
-        if (h.timerActive) spawnMinis(h)
+        spawnMinis(h)
     }
 
     private fun applyVisual(h: Holder) {
@@ -423,7 +443,7 @@ class FloatingService : Service() {
             h.view.background = GradientDrawable().apply {
                 shape = GradientDrawable.OVAL
                 setColor(Color.TRANSPARENT)
-                setStroke((2 * dens).toInt(),
+                setStroke((3 * dens).toInt(),
                     if (h.timerActive) 0xFFFF1744.toInt() else 0xFF00E676.toInt())
             }
             return
@@ -469,10 +489,12 @@ class FloatingService : Service() {
     }
 
     private fun toggleTimer(h: Holder) {
-        if (h.timerActive) return
+        if (h.timerActive) {
+            stopTimer(h)
+            return
+        }
         h.timerActive = true
         applyVisual(h)
-        spawnMinis(h)
         runRound(h, 1)
     }
 
@@ -487,24 +509,16 @@ class FloatingService : Service() {
             if (d > maxD) maxD = d
             handler.postDelayed({ fireMini(h, idx) }, d)
         }
-        handler.postDelayed({ runRound(h, round + 1) }, maxD + 60L)
+        handler.postDelayed({ runRound(h, round + 1) }, maxD + 80L)
     }
 
     private fun stopTimer(h: Holder) {
         h.timerActive = false
-        clearMinis(h)
         applyVisual(h)
     }
 
     private fun fireMini(h: Holder, idx: Int) {
-        val v = h.miniViews.getOrNull(idx) ?: return
-        val pp = h.miniParams.getOrNull(idx)
-        if (pp != null) {
-            val cx = pp.x + v.width / 2f
-            val cy = pp.y + v.height / 2f
-            AutoTapService.instance?.tap(cx, cy)
-        }
-        fireMiniView(v)
+        manualFire(h, idx)
     }
 
     private fun toggleExpander(h: Holder) {
@@ -519,7 +533,6 @@ class FloatingService : Service() {
                 setTextColor(Color.WHITE)
                 typeface = Typeface.DEFAULT_BOLD
                 gravity = Gravity.CENTER
-                width = sp; height = sp
                 setTextSize(TypedValue.COMPLEX_UNIT_PX, sp * 0.4f)
                 background = GradientDrawable().apply {
                     shape = GradientDrawable.OVAL
@@ -529,8 +542,7 @@ class FloatingService : Service() {
                 setOnLongClickListener { openEditor(h.config); true }
             }
             val pp = WindowManager.LayoutParams(
-                WindowManager.LayoutParams.WRAP_CONTENT,
-                WindowManager.LayoutParams.WRAP_CONTENT,
+                sp, sp,
                 overlayType(),
                 WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
                 PixelFormat.TRANSLUCENT,
