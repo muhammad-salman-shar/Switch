@@ -84,19 +84,6 @@ class MainActivity : AppCompatActivity() {
             }
         })
         root.addView(Button(this).apply {
-            text = "DEBUG: Show Tap Log"
-            setOnClickListener {
-                val lines = AutoTapService.dump()
-                val txt = if (lines.isEmpty()) "(khali)" else lines.joinToString("\n")
-                AlertDialog.Builder(this@MainActivity)
-                    .setTitle("Tap log (${lines.size})")
-                    .setMessage(txt)
-                    .setPositiveButton("Clear") { _, _ -> AutoTapService.clear() }
-                    .setNegativeButton("Close", null)
-                    .show()
-            }
-        })
-        root.addView(Button(this).apply {
             text = "+  Add Button"
             setOnClickListener { showAddDialog() }
         })
