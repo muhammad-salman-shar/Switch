@@ -439,7 +439,7 @@ class FloatingService : Service() {
                 runCatching { wm.addView(v, pp) }
                 fireMiniView(v)
             }, 120L)
-        }, 100L)
+        }, 220L)
     }
 
     private fun addMiniQuick(h: Holder) {
@@ -523,7 +523,8 @@ class FloatingService : Service() {
         }
         h.timerActive = true
         applyVisual(h)
-        runRound(h, 1)
+        // Wait 250ms so user's finger is off the trigger before dispatch
+        handler.postDelayed({ runRound(h, 1) }, 250L)
     }
 
     private fun runRound(h: Holder, round: Int) {

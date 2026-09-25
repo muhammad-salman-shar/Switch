@@ -36,7 +36,7 @@ class EditTimerActivity : AppCompatActivity() {
             orientation = LinearLayout.VERTICAL
             setPadding(48, 96, 48, 48)
         }
-        root.addView(TextView(this).apply { text = "Timer Button Settings"; textSize = 20f })
+        root.addView(TextView(this).apply { text = "Trigger Settings"; textSize = 20f })
 
         preview = TextView(this).apply {
             gravity = Gravity.CENTER; setTextColor(Color.WHITE)
@@ -72,10 +72,10 @@ class EditTimerActivity : AppCompatActivity() {
         })
 
         root.addView(TextView(this).apply {
-            text = "Mini timers: ${config.minis.size}/6"; textSize = 15f; setPadding(0, 32, 0, 8)
+            text = "Clicks: ${config.minis.size}/6"; textSize = 15f; setPadding(0, 32, 0, 8)
         })
         root.addView(Button(this).apply {
-            text = "+ Add mini timer"
+            text = "+ Add Click"
             isEnabled = config.minis.size < 6
             setOnClickListener {
                 config.minis.add(com.salmanshar.appswitch.model.MiniTimer(

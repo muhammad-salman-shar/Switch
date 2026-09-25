@@ -48,7 +48,7 @@ class EditMiniActivity : AppCompatActivity() {
             orientation = LinearLayout.VERTICAL
             setPadding(48, 96, 48, 48)
         }
-        root.addView(TextView(this).apply { text = "Mini Timer #${idx + 1}"; textSize = 20f })
+        root.addView(TextView(this).apply { text = "Click #${idx + 1}"; textSize = 20f })
 
         preview = TextView(this).apply {
             gravity = Gravity.CENTER; setTextColor(Color.WHITE)

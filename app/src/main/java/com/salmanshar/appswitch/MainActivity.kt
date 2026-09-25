@@ -191,7 +191,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun typeName(t: Int): String = when (t) {
-        0 -> "Timer"
+        0 -> "Trigger"
         1 -> "Single app"
         2 -> "2-app toggle"
         3 -> "3-app cycle"
@@ -201,7 +201,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun showAddDialog() {
-        val options = arrayOf("1 Button", "2 Buttons", "3 Buttons", "4 Buttons (expander)", "5 Buttons", "Timer Button")
+        val options = arrayOf("1 Button", "2 Buttons", "3 Buttons", "4 Buttons (expander)", "5 Buttons", "Trigger")
         AlertDialog.Builder(this)
             .setTitle("Add button")
             .setItems(options) { _, which ->
